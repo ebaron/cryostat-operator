@@ -13,6 +13,7 @@ k8s:
 .PHONY: openapi
 openapi:
 	operator-sdk generate openapi
+	sed -i 's/^      type: object//g' deploy/crds/rhjmc.redhat.com_*crd.yaml
 
 .PHONY: image
 image: generate
