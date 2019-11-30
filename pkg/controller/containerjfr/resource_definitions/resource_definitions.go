@@ -122,6 +122,7 @@ func NewCoreContainer(cr *rhjmcv1alpha1.ContainerJFR, specs *ServiceSpecs) corev
 			Value: "true",
 		})
 	}
+	privileged := true
 	return corev1.Container{
 		Name:  cr.Name,
 		Image: imageTag,
@@ -143,6 +144,9 @@ func NewCoreContainer(cr *rhjmcv1alpha1.ContainerJFR, specs *ServiceSpecs) corev
 			},
 		},
 		Env: envs,
+		SecurityContext: &corev1.SecurityContext{ // XXX
+			Privileged: &privileged,
+		},
 	}
 }
 
