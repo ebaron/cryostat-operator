@@ -123,6 +123,7 @@ func NewCoreContainer(cr *rhjmcv1alpha1.ContainerJFR, specs *ServiceSpecs) corev
 		},
 	}
 	imageTag := "quay.io/rh-jmc-team/container-jfr:0.8.0"
+	privileged := true
 	if cr.Spec.Minimal {
 		imageTag += "-minimal"
 		envs = append(envs, corev1.EnvVar{
@@ -158,6 +159,9 @@ func NewCoreContainer(cr *rhjmcv1alpha1.ContainerJFR, specs *ServiceSpecs) corev
 					Path: "/clienturl",
 				},
 			},
+		},
+		SecurityContext: &corev1.SecurityContext{ // XXX
+			Privileged: &privileged,
 		},
 	}
 }
