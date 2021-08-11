@@ -4,7 +4,7 @@ SHELL := /bin/bash
 IMAGE_VERSION ?= 2.0.0-dev
 BUNDLE_VERSION ?= $(IMAGE_VERSION)
 DEFAULT_NAMESPACE ?= quay.io/cryostat
-IMAGE_NAMESPACE ?= $(DEFAULT_NAMESPACE)
+IMAGE_NAMESPACE ?= quay.io/ebaron
 OPERATOR_NAME ?= cryostat-operator
 CLUSTER_CLIENT ?= kubectl
 
