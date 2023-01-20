@@ -41,9 +41,9 @@ import (
 	"errors"
 	"fmt"
 
-	operatorv1beta1 "github.com/cryostatio/cryostat-operator/api/v1beta1"
 	"github.com/cryostatio/cryostat-operator/internal/controllers/common"
 	resources "github.com/cryostatio/cryostat-operator/internal/controllers/common/resource_definitions"
+	"github.com/cryostatio/cryostat-operator/internal/controllers/model"
 	certv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -59,66 +59,66 @@ var errCertManagerMissing = errors.New("cert-manager integration is enabled, but
 const eventCertManagerUnavailableMsg = "cert-manager is not detected in the cluster, please install cert-manager or disable it by setting " +
 	"\"enableCertManager\" in this Cryostat custom resource to false."
 
-func (r *CryostatReconciler) setupTLS(ctx context.Context, cr *operatorv1beta1.Cryostat) (*resources.TLSConfig, error) {
+func (r *Reconciler) setupTLS(ctx context.Context, cr *model.CryostatInstance) (*resources.TLSConfig, error) {
 	// If cert-manager is not available, emit an Event to inform the user
 	available, err := r.certManagerAvailable()
 	if err != nil {
 		return nil, err
 	}
 	if !available {
-		r.EventRecorder.Event(cr, corev1.EventTypeWarning, eventCertManagerUnavailableType, eventCertManagerUnavailableMsg)
+		r.EventRecorder.Event(cr.Instance, corev1.EventTypeWarning, eventCertManagerUnavailableType, eventCertManagerUnavailableMsg)
 		return nil, errCertManagerMissing
 	}
 
 	// Create self-signed issuer used to bootstrap CA
-	err = r.createOrUpdateIssuer(ctx, resources.NewSelfSignedIssuer(cr), cr)
+	err = r.createOrUpdateIssuer(ctx, resources.NewSelfSignedIssuer(cr), cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create CA certificate for Cryostat using the self-signed issuer
 	caCert := resources.NewCryostatCACert(cr)
-	err = r.createOrUpdateCertificate(ctx, caCert, cr)
+	err = r.createOrUpdateCertificate(ctx, caCert, cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create CA issuer using the CA cert just created
-	err = r.createOrUpdateIssuer(ctx, resources.NewCryostatCAIssuer(cr), cr)
+	err = r.createOrUpdateIssuer(ctx, resources.NewCryostatCAIssuer(cr), cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create secret to hold keystore password
 	keystoreSecret := newKeystoreSecret(cr)
-	err = r.createOrUpdateKeystoreSecret(ctx, keystoreSecret, cr)
+	err = r.createOrUpdateKeystoreSecret(ctx, keystoreSecret, cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create a certificate for Cryostat signed by the CA just created
 	cryostatCert := resources.NewCryostatCert(cr, keystoreSecret.Name)
-	err = r.createOrUpdateCertificate(ctx, cryostatCert, cr)
+	err = r.createOrUpdateCertificate(ctx, cryostatCert, cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create a certificate for Grafana signed by the Cryostat CA
 	grafanaCert := resources.NewGrafanaCert(cr)
-	err = r.createOrUpdateCertificate(ctx, grafanaCert, cr)
+	err = r.createOrUpdateCertificate(ctx, grafanaCert, cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create a certificate for the reports generator signed by the Cryostat CA
 	reportsCert := resources.NewReportsCert(cr)
-	err = r.createOrUpdateCertificate(ctx, reportsCert, cr)
+	err = r.createOrUpdateCertificate(ctx, reportsCert, cr.Instance)
 	if err != nil {
 		return nil, err
 	}
 
 	// Update owner references of TLS secrets created by cert-manager to ensure proper cleanup
-	err = r.setCertSecretOwner(ctx, cr, caCert, cryostatCert, grafanaCert, reportsCert)
+	err = r.setCertSecretOwner(ctx, cr.Instance, caCert, cryostatCert, grafanaCert, reportsCert)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (r *CryostatReconciler) setupTLS(ctx context.Context, cr *operatorv1beta1.C
 	}, nil
 }
 
-func (r *CryostatReconciler) setCertSecretOwner(ctx context.Context, cr *operatorv1beta1.Cryostat, certs ...*certv1.Certificate) error {
+func (r *Reconciler) setCertSecretOwner(ctx context.Context, owner metav1.Object, certs ...*certv1.Certificate) error {
 	// Make Cryostat CR controller of secrets created by cert-manager
 	for _, cert := range certs {
 		secret, err := r.GetCertificateSecret(ctx, cert)
@@ -148,8 +148,8 @@ func (r *CryostatReconciler) setCertSecretOwner(ctx context.Context, cr *operato
 			}
 			return err
 		}
-		if !metav1.IsControlledBy(secret, cr) {
-			err = controllerutil.SetControllerReference(cr, secret, r.Scheme)
+		if !metav1.IsControlledBy(secret, owner) {
+			err = controllerutil.SetControllerReference(owner, secret, r.Scheme)
 			if err != nil {
 				return err
 			}
@@ -163,7 +163,7 @@ func (r *CryostatReconciler) setCertSecretOwner(ctx context.Context, cr *operato
 	return nil
 }
 
-func (r *CryostatReconciler) certManagerAvailable() (bool, error) {
+func (r *Reconciler) certManagerAvailable() (bool, error) {
 	// Check if cert-manager API is available. Checking just one should be enough.
 	_, err := r.RESTMapper.RESTMapping(schema.GroupKind{
 		Group: certv1.SchemeGroupVersion.Group,
@@ -180,7 +180,7 @@ func (r *CryostatReconciler) certManagerAvailable() (bool, error) {
 	return true, nil
 }
 
-func (r *CryostatReconciler) createOrUpdateIssuer(ctx context.Context, issuer *certv1.Issuer, owner metav1.Object) error {
+func (r *Reconciler) createOrUpdateIssuer(ctx context.Context, issuer *certv1.Issuer, owner metav1.Object) error {
 	issuerSpec := issuer.Spec.DeepCopy()
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, issuer, func() error {
 		if err := controllerutil.SetControllerReference(owner, issuer, r.Scheme); err != nil {
@@ -197,7 +197,7 @@ func (r *CryostatReconciler) createOrUpdateIssuer(ctx context.Context, issuer *c
 	return nil
 }
 
-func (r *CryostatReconciler) createOrUpdateCertificate(ctx context.Context, cert *certv1.Certificate, owner metav1.Object) error {
+func (r *Reconciler) createOrUpdateCertificate(ctx context.Context, cert *certv1.Certificate, owner metav1.Object) error {
 	certSpec := cert.Spec.DeepCopy()
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, cert, func() error {
 		if err := controllerutil.SetControllerReference(owner, cert, r.Scheme); err != nil {
@@ -214,16 +214,16 @@ func (r *CryostatReconciler) createOrUpdateCertificate(ctx context.Context, cert
 	return nil
 }
 
-func newKeystoreSecret(cr *operatorv1beta1.Cryostat) *corev1.Secret {
+func newKeystoreSecret(cr *model.CryostatInstance) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-keystore",
-			Namespace: cr.Namespace,
+			Namespace: cr.InstallNamespace,
 		},
 	}
 }
 
-func (r *CryostatReconciler) createOrUpdateKeystoreSecret(ctx context.Context, secret *corev1.Secret, owner metav1.Object) error {
+func (r *Reconciler) createOrUpdateKeystoreSecret(ctx context.Context, secret *corev1.Secret, owner metav1.Object) error {
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		if err := controllerutil.SetControllerReference(owner, secret, r.Scheme); err != nil {
 			return err
@@ -244,7 +244,7 @@ func (r *CryostatReconciler) createOrUpdateKeystoreSecret(ctx context.Context, s
 	return nil
 }
 
-func (r *CryostatReconciler) getCertficateBytes(ctx context.Context, cert *certv1.Certificate) ([]byte, error) {
+func (r *Reconciler) getCertficateBytes(ctx context.Context, cert *certv1.Certificate) ([]byte, error) {
 	secret, err := r.GetCertificateSecret(ctx, cert)
 	if err != nil {
 		return nil, err
