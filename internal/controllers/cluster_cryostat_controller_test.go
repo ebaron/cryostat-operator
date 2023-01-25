@@ -41,15 +41,15 @@ import (
 	. "github.com/onsi/ginkgo"
 )
 
-var _ = Describe("CryostatController", func() {
-	c := &controllerTest{
-		clusterScoped:   false,
-		constructorFunc: newCryostatController,
+var _ = Describe("ClusterCryostatController", func() {
+	c := controllerTest{
+		clusterScoped:   true,
+		constructorFunc: newClusterCryostatController,
 	}
 
 	c.commonTests()
 })
 
-func newCryostatController(config *controllers.ReconcilerConfig) controllers.ReconcilerInterface {
-	return controllers.NewCryostatReconciler(config)
+func newClusterCryostatController(config *controllers.ReconcilerConfig) controllers.ReconcilerInterface {
+	return controllers.NewClusterCryostatReconciler(config)
 }

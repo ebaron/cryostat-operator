@@ -55,6 +55,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+// Verify that *ClusterCryostatReconciler implements ReconcilerInterface.
+var _ ReconcilerInterface = (*CryostatReconciler)(nil)
+
 // CryostatReconciler reconciles a Cryostat object
 type CryostatReconciler struct {
 	delegate *Reconciler
@@ -120,4 +123,8 @@ func (r *CryostatReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return c.Complete(r)
+}
+
+func (r *CryostatReconciler) GetConfig() *ReconcilerConfig {
+	return r.ReconcilerConfig
 }

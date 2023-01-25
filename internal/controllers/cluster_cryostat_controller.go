@@ -58,6 +58,9 @@ import (
 // Generates constants from environment variables at build time
 //go:generate go run ../tools/const_generator.go
 
+// Verify that *ClusterCryostatReconciler implements ReconcilerInterface.
+var _ ReconcilerInterface = (*ClusterCryostatReconciler)(nil)
+
 // CryostatReconciler reconciles a Cryostat object
 type ClusterCryostatReconciler struct {
 	delegate *Reconciler
@@ -139,4 +142,8 @@ func (r *ClusterCryostatReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return c.Complete(r)
+}
+
+func (r *ClusterCryostatReconciler) GetConfig() *ReconcilerConfig {
+	return r.ReconcilerConfig
 }
