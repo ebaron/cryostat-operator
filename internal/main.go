@@ -37,6 +37,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -44,6 +46,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	certv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
@@ -56,6 +59,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	oauthv1 "github.com/openshift/api/oauth/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
+	oauthclient "github.com/openshift/client-go/oauth/clientset/versioned/typed/oauth/v1"
+	routev1client "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
+	"github.com/openshift/library-go/pkg/authorization/scopemetadata"
+	"github.com/openshift/library-go/pkg/oauth/oauthserviceaccountclient"
+	"github.com/openshift/oauth-server/pkg/scopecovers"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	operatorv1beta1 "github.com/cryostatio/cryostat-operator/api/v1beta1"
 	"github.com/cryostatio/cryostat-operator/internal/controllers"
@@ -119,6 +131,30 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	clientset := kubernetes.NewForConfigOrDie(mgr.GetConfig())
+	saClientGetter := oauthserviceaccountclient.NewServiceAccountOAuthClientGetter(
+		clientset.CoreV1(),
+		clientset.CoreV1(),
+		clientset.CoreV1().Events("c"),
+		routev1client.NewForConfigOrDie(mgr.GetConfig()),
+		oauthclient.NewForConfigOrDie(mgr.GetConfig()).OAuthClients(),
+		oauthv1.GrantHandlerType(osinv1.GrantHandlerPrompt),
+	)
+	oc, err := saClientGetter.Get(context.TODO(), "system:serviceaccount:c:clustercryostat-sample", metav1.GetOptions{})
+	if err != nil {
+		setupLog.Error(err, "Get")
+		os.Exit(1)
+	}
+	ocBytes, _ := json.MarshalIndent(oc, "", "  ")
+	setupLog.Info(fmt.Sprintf("OAuthClient: %s", string(ocBytes)))
+
+	scopes := scopecovers.Split("user:check-access role:cryostat-operator-oauth-client:a role:cryostat-operator-oauth-client:b role:cryostat-operator-oauth-client:c")
+	err = scopemetadata.ValidateScopeRestrictions(oc, scopes...)
+	if err != nil {
+		setupLog.Error(err, "ValidateScopeRestrictions")
 		os.Exit(1)
 	}
 
